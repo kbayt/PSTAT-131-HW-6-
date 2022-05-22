@@ -129,35 +129,33 @@ pokemon_tree_final_fit %>%
   rpart.plot()
 ```
 ## EXERCISE 5 CONT
-Note that the code below is commented in order to save processing time while knitting. The code below was run outside of the r-markdown and then stored. 
-```{r}
-# rf_spec <- rand_forest() %>%
-#   set_engine("ranger", importance = "impurity") %>%
-#   set_mode("classification")
-# 
-# rf_wkflow <- workflow() %>%
-#   add_model(rf_spec %>%
-#               set_args(mtry = tune(), trees = tune(),
-#                        min_n = tune())) %>%
-#   add_recipe(pokemon_recipe)
-# 
-# 
-# set.seed(4857)
-# multi_param_grid <- grid_regular(
-#   mtry(range = c(1,8)), trees(range(1,200)),
-#   min_n(range(1,30)), levels = 8)
-# multi_tune_res <- tune_grid(
-#   rf_wkflow,
-#   resamples = pokemon_folds,
-#   grid = multi_param_grid,
-#   metrics = metric_set(roc_auc))
-?rand_forest()
+```{r eval=FALSE, include=TRUE}
+rf_spec <- rand_forest() %>%
+  set_engine("ranger", importance = "impurity") %>%
+  set_mode("classification")
+
+rf_wkflow <- workflow() %>%
+  add_model(rf_spec %>%
+              set_args(mtry = tune(), trees = tune(),
+                       min_n = tune())) %>%
+  add_recipe(pokemon_recipe)
+
+
+set.seed(4857)
+multi_param_grid <- grid_regular(
+  mtry(range = c(1,8)), trees(range(1,200)),
+  min_n(range(1,30)), levels = 8)
+multi_tune_res <- tune_grid(
+  rf_wkflow,
+  resamples = pokemon_folds,
+  grid = multi_param_grid,
+  metrics = metric_set(roc_auc))
 ```
 According to the documentation of rand_forest(), mtry represents the number of predictors that will be used when creating the tree models. Mtry should not be less than 1 because we want at least one parameter to train our model, and we can not have a negative amount of parameters. Mtry should also not be greater than 8 because we only have 8 predictors in our model. A model with mtry = 8 would be a bagging model. Also, according to the documentation, trees represents the number of trees and min_n represents the minimum number of data points in a node that are required for the node to be split further. 
-TODO: COME BACK AND POTENTIALLY FIX PARAMETERS
 
 ## EXERCISE 6
 ```{r}
+load(file = "multi_tune_res.rda")
 autoplot(multi_tune_res)
 ```
 From the plot is appears that higher values of trees perform better. In adition, higher minimal node sizes appeared to do better as well. The number of predictors seems to be the best when its four or greater. Looking at all the graphs, I think our optimal point is at minimal node size 13, 200 trees, and 2 predictors. 
@@ -234,23 +232,24 @@ total_res
 ```
 The random forest model performed the best on the folds. 
 ```{r}
-# fitting boosted model to testing data 
-best_boost_trees_test <- select_best(tree_tune_res)
-best_boost_model_test <- finalize_workflow(boost_wkflow,
-                                      best_boost_trees)
-best_boost_model_fit_test <- fit(best_boost_model_test,
-                            data = pokemon_test)
+# fitting rf model to testing data 
+best_model <- select_best(multi_tune_res, 
+                          metric = "roc_auc")
+best_model_final <- finalize_workflow(rf_wkflow,
+                                      best_model)
+best_model_final_fit <- fit(best_model_final,
+                            data = pokemon_train)
 ```
 ```{r}
 # print AUC value of boosted model 
-augment(best_boost_model_fit_test, new_data = pokemon_test) %>%
+augment(best_model_final_fit, new_data = pokemon_test) %>%
   roc_auc(truth = type_1, estimate = c(.pred_Bug, 
                                        .pred_Fire, .pred_Grass, .pred_Normal,
                                        .pred_Psychic, .pred_Water))
 ```
 ```{r}
 # ROC curves 
-augment(best_boost_model_fit_test, new_data = pokemon_test) %>%
+augment(best_model_final_fit, new_data = pokemon_test) %>%
   roc_curve(truth = type_1, estimate = c(.pred_Bug, 
                                        .pred_Fire, .pred_Grass, .pred_Normal,
                                        .pred_Psychic, .pred_Water)) %>%
@@ -258,5 +257,8 @@ augment(best_boost_model_fit_test, new_data = pokemon_test) %>%
 ```
 ```{r}
 # confusion matrix heat map 
+augment(best_model_final_fit, new_data = pokemon_test) %>%
+  conf_mat(type_1, estimate = .pred_class) %>%
+  autoplot(type="heatmap") 
 ```
-
+Overall, the model was most accurate at predicting psychic and normal and the worst at predicting grass and water. 
